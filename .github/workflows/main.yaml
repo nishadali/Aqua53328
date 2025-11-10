@@ -103,7 +103,7 @@ jobs:
           platforms: linux/amd64
           push: false
           outputs: type=registry
-          tags: vulnerable-app:ci
+          tags: nishadali/aqua-test:$GITHUB_RUN_NUMBER
         
       # - uses: actions/setup-java@v4
       #   with:
@@ -297,7 +297,7 @@ jobs:
             --aqua-key "${{ secrets.AQUA_KEY_EU }}" \
             --aqua-secret "${{ secrets.AQUA_SECRET_EU }}" \
             --cspm-url "https://eu-1.api.cloudsploit.com" \
-            --artifact-path "vulnerable-app:ci" \
+            --artifact-path "nishadali/aqua-test:$GITHUB_RUN_NUMBER" \
             --debug
         env:
           AQUA_URL: https://api.eu-1.supply-chain.cloud.aquasec.com
