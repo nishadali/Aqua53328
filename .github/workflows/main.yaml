@@ -1,0 +1,291 @@
+name: 6-build-and-deploy-to-k8s-with-wait-and-labels.yml
+
+on:
+  workflow_call:
+    inputs:
+      kubernetes_resource_path:
+        type: string
+        description: "Kubernetes Rourcen Ordner"
+        required: false
+        default: "src/main/jkube"
+      kubernetes_resource_path_prod:
+        type: string
+        description: "Kubernetes Rourcen Ordner"
+        required: false
+        default: "src/main/jkube"
+      java_version:
+        type: string
+        description: "Java Version"
+        required: false
+        default: "17"
+      java_distribution:
+        type: string
+        description: "Java Distribution"
+        required: false
+        default: "temurin"
+      targets:
+        type: string
+        required: false
+        default: "demo:verify:postdeploy,prod:no-verify:postdeploy"
+        description: "Comma-separated list of targets, verify and postdeploy flags, Syntaxt target:(verify|no-verify):(postdeploy|no-postdeploy) e.g. 'demo:no-verify:postdeploy,prod:no-verify:postdeploy'"
+      autopromote_pairs:
+        type: string
+        required: false
+        default: ""
+        description: "Optional ordered comma-separated target pairs for auto-promotion with optional wait times, e.g. 'demo-dev=30s,dev-prod=1m'"
+
+env:
+  PROJECT_ID: nfdev-finfire-demo
+  REGION: europe-west1
+  REPO_DOMAIN: eu.gcr.io
+  REPO: nfdev-finfire-demo
+  ATTESTOR: nfdev-attestor-signature
+  KEYRING: github-attester-keyring
+  KEY: github-attester-key
+  KEYVERSION: 1
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  aqua-scan:
+    if: ${{ github.event_name != 'pull_request' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Aqua Scan
+        uses: docker://aquasec/aqua-scanner
+        with:
+          args: trivy fs --scanners misconfig,vuln,secret --db-repository=registry.aquasec.com/trivy-db:2 --checks-bundle-repository=registry.aquasec.com/trivy-checks:1 --java-db-repository=registry.aquasec.com/trivy-java-db:1 --sast .
+        env:
+          AQUA_KEY: ${{ secrets.AQUA_KEY }}
+          AQUA_SECRET: ${{ secrets.AQUA_SECRET }}
+          TRIVY_USERNAME: ${{ secrets.TRIVY_USERNAME }}
+          TRIVY_PASSWORD: ${{ secrets.TRIVY_PASSWORD }}
+          GITHUB_TOKEN: ${{ github.token }}
+          AQUA_URL: https://api.eu-1.supply-chain.cloud.aquasec.com
+          CSPM_URL: https://eu-1.api.cloudsploit.com
+          TRIVY_RUN_AS_PLUGIN: "aqua"
+
+  build-docker-image:
+    env:
+      commitmsg: ${{ github.event.head_commit.message }}
+    runs-on: ubuntu-latest
+    if: |
+      !(github.event_name == 'pull_request' && startsWith(github.head_ref, 'dependabot/'))
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      deployments: write
+      statuses: write
+    steps:
+      - uses: actions/checkout@v4
+      # - uses: actions/setup-java@v4
+      #   with:
+      #     java-version: "${{ inputs.java_version }}"
+      #     distribution: "${{ inputs.java_distribution }}"
+      #     # cache: "maven" # cache wird hier bereits aktiviert
+      #     server-username: GITHUB_USER_REF # env variable name for username
+      #     server-password: GITHUB_TOKEN_REF # env variable name for GitHub Personal Access Token
+      # - name: Cache local Maven repository
+      #   uses: actions/cache@v4
+      #   with:
+      #     path: ~/.m2/repository
+      #     key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+      #     restore-keys: |
+      #       ${{ runner.os }}-maven-
+      # - name: Get settings.xml for Maven Builds
+      #   uses: netfonds/github-runner/.github/actions/maven-settings@main
+      #   env:
+      #     WIF_PROVIDER: ${{ secrets.WIF_PROVIDER }}
+      #     WIF_SERVICE_ACCOUNT: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+      # - name: Generate Version
+      #   run: |-
+      #     echo "ARTIFACT_ID=$(mvn help:evaluate -Dexpression=project.artifactId -q -DforceStdout)" >> $GITHUB_ENV
+      #     echo "sonar.projectVersion=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)" >> sonar-project.properties
+      #     ORIGINAL_VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
+      #     DATUM=$(date +'%Y%m%d-%H%M%S')
+      #     mvn -B versions:set -DnewVersion="$ORIGINAL_VERSION-$DATUM-build${GITHUB_RUN_NUMBER}" -DgenerateBackupPoms=false
+      #     VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
+      #     echo "VERSION=$VERSION" >> $GITHUB_ENV
+      #     echo "ORIGINAL_VERSION=$ORIGINAL_VERSION" >> $GITHUB_ENV
+      #   env:
+      #     GH_REPO: ${{ github.event.repository.name }}
+      #     GH_TOKEN: ${{ secrets.GH_PAT_PASSWORD }}
+      #     GH_USER: ${{ secrets.GH_PAT_USER }}
+
+      # - name: Bower Detect And Install
+      #   uses: netfonds/github-runner/.github/actions/bower-detect-and-install@main
+      #   with:
+      #     GH_PAT_PASSWORD: ${{ secrets.GH_PAT_PASSWORD }}
+      #     GH_PAT_USER: ${{ secrets.GH_PAT_USER }}
+      # - name: Unit Tests
+      #   run: mvn --batch-mode test
+      #   env:
+      #     GH_TOKEN: ${{ secrets.GH_PAT_PASSWORD }}
+      #     GH_USER: ${{ secrets.GH_PAT_USER }}
+      # - name: Sonar Scan
+      #   uses: netfonds/github-runner/.github/actions/scan-sonar@main
+      #   env:
+      #     GH_TOKEN: ${{ secrets.GH_PAT_PASSWORD }}
+      #     GH_USER: ${{ secrets.GH_PAT_USER }}
+      #     SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      #     SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+
+      # - name: Build Jar
+      #   if: ${{ github.event_name != 'pull_request' }}
+      #   run: mvn --batch-mode package -DskipTests
+      #   env:
+      #     GH_TOKEN: ${{ secrets.GH_PAT_PASSWORD }}
+      #     GH_USER: ${{ secrets.GH_PAT_USER }}
+      # - name: Generate and Add Labels
+      #   if: ${{ github.event_name != 'pull_request' }}
+      #   uses: netfonds/github-runner/.github/actions/generate-and-add-labels@main
+      #   with:
+      #     kubernetes_resource_path: ${{ inputs.kubernetes_resource_path }}
+      #   env:
+      #     GH_REPO: ${{ github.event.repository.name }}
+      #     GH_TOKEN: ${{ secrets.GH_PAT_PASSWORD }}
+      #     GH_USER: ${{ secrets.GH_PAT_USER }}
+      # - name: Generate and Add Labels Produktiv
+      #   if: ${{ inputs.kubernetes_resource_path != inputs.kubernetes_resource_path_prod && github.event_name != 'pull_request' }}
+      #   uses: netfonds/github-runner/.github/actions/generate-and-add-labels@main
+      #   with:
+      #     kubernetes_resource_path: ${{ inputs.kubernetes_resource_path_prod }}
+      #   env:
+      #     GH_REPO: ${{ github.event.repository.name }}
+      #     GH_TOKEN: ${{ secrets.GH_PAT_PASSWORD }}
+      #     GH_USER: ${{ secrets.GH_PAT_USER }}
+
+      # - name: Auth with Google
+      #   id: auth
+      #   if: ${{ github.event_name != 'pull_request' }}
+      #   uses: google-github-actions/auth@v2
+      #   with:
+      #     workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+      #     service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      # - name: Configure gcloud
+      #   if: ${{ github.event_name != 'pull_request' }}
+      #   run: |-
+      #     gcloud auth configure-docker eu.gcr.io --quiet
+      # - name: Build and Push Image
+      #   if: ${{ github.event_name != 'pull_request' }}
+      #   run: mvn -B k8s:build k8s:push -Djkube.docker.verbose=true
+      #   env:
+      #     GH_TOKEN: ${{ secrets.GH_PAT_PASSWORD }}
+      #     GH_USER: ${{ secrets.GH_PAT_USER }}
+      # - name: Generate Deployment
+      #   if: ${{ github.event_name != 'pull_request' }}
+      #   run: |-
+      #     mvn -B k8s:resource -Ddocker.verbose=true -Dfabric8.mode=kubernetes -Djkube.targetDir=config -Djkube.namespace=demo -Djkube.resourceDir=${{ inputs.kubernetes_resource_path }}
+      #     mv config/kubernetes.yml config/kubernetes-demo.yml
+      #     mvn -B k8s:resource -Ddocker.verbose=true -Dfabric8.mode=kubernetes -Djkube.targetDir=config -Djkube.namespace=produktiv -Djkube.resourceDir=${{ inputs.kubernetes_resource_path_prod }}
+      #     mv config/kubernetes.yml config/kubernetes-prod.yml
+      #     ls -la config/*
+      #     cat config/kubernetes-demo.yml
+      #     cat config/kubernetes-prod.yml
+      #     IMAGE_TAG=$(grep "image: $REPO_DOMAIN" config/kubernetes-demo.yml | awk '{ print $2; }' | awk -F : '{ print $2; }' | head -n 1)
+      #     IMAGE_NAME=$(grep "image: $REPO_DOMAIN" config/kubernetes-demo.yml | awk '{ print $2; }' | awk -F : '{ print $1; }' | head -n 1)
+      #     echo "$IMAGE_NAME:$IMAGE_TAG"
+      #     echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
+      #     echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
+
+      #     # Get the digest of the pushed image
+      #     IMAGE_DIGEST=$(gcloud container images describe $IMAGE_NAME:$IMAGE_TAG --format='value(image_summary.digest)' --quiet)
+      #     echo "IMAGE_DIGEST=$IMAGE_DIGEST" >> $GITHUB_ENV
+      #     echo "Image digest: $IMAGE_DIGEST"
+      #   env:
+      #     GH_TOKEN: ${{ secrets.GH_PAT_PASSWORD }}
+      #     GH_USER: ${{ secrets.GH_PAT_USER }}
+      # - name: Load Skaffold Config
+      #   if: ${{ github.event_name != 'pull_request' }}
+      #   uses: netfonds/github-runner/.github/actions/load-skaffold-config@main
+      # - name: Generate Pipeline
+      #   if: ${{ github.event_name != 'pull_request' }}
+      #   uses: netfonds/github-runner/.github/actions/generate-complete-pipeline-config@main
+      #   with:
+      #     targets: ${{ inputs.targets }}
+      #     autopromote_pairs: ${{ inputs.autopromote_pairs }}
+      #   env:
+      #     SERVICE_ACCOUNT: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+      #     SERVICE_NAME: ${{ env.ARTIFACT_ID }}
+      # - name: Create Attestation for Binary Authorization
+      #   if: ${{ github.event_name != 'pull_request' }}
+      #   run: |-
+      #     gcloud beta container binauthz attestations sign-and-create \
+      #      --attestor=$ATTESTOR \
+      #      --artifact-url=$IMAGE_NAME@$IMAGE_DIGEST \
+      #      --keyversion="projects/$PROJECT_ID/locations/global/keyRings/$KEYRING/cryptoKeys/$KEY/cryptoKeyVersions/$KEYVERSION"
+
+      # - name: Create Google Cloud Deploy Release via Delivery Pipeline
+      #   if: ${{ github.event_name != 'pull_request' }}
+      #   run: |-
+      #     gcloud deploy releases create $ARTIFACT_ID-${GITHUB_RUN_NUMBER} \
+      #       --project=$PROJECT_ID \
+      #       --region=$REGION \
+      #       --delivery-pipeline=$ARTIFACT_ID \
+      #       --skaffold-file=./config/skaffold.yml \
+      #       --gcs-source-staging-dir="gs://nfdev-finfire-demo-clouddeploy/$ARTIFACT_ID/${GITHUB_RUN_NUMBER}/source" \
+      #       --annotations="actor=$GITHUB_ACTOR,branch=$GITHUB_REF_NAME,commit=$GITHUB_SHA,run_id=$GITHUB_RUN_NUMBER" \
+      #       --description="$GITHUB_REF_NAME $CHANGELOG" \
+      #       --deploy-parameters="IMAGE_NAME=$IMAGE_NAME,IMAGE_TAG=$IMAGE_TAG,IMAGE_DIGEST=$IMAGE_DIGEST,SERVICE_NAME=$ARTIFACT_ID"
+      #   env:
+      #     GITHUB_ACTOR: ${{ github.actor }}
+      #     GITHUB_REF_NAME: ${{ github.ref_name }}
+      #     GITHUB_SHA: ${{ github.sha }}
+      #     CHANGELOG: ${{ env.commitmsg }}
+
+      # - name: Printout URLs
+      #   if: ${{ github.event_name != 'pull_request' }}
+      #   run: |
+      #     echo "[Pipeline Link](https://console.cloud.google.com/deploy/delivery-pipelines/europe-west1/$ARTIFACT_ID?project=nfdev-finfire-demo)" >> $GITHUB_STEP_SUMMARY
+      #     echo "[Swagger](https://demo.finfire.de/services/$ARTIFACT_ID/api/swagger/)" >> $GITHUB_STEP_SUMMARY
+      - name: Trivy Repo Scan
+        uses: docker://aquasec/aqua-scanner
+        with:
+          args: trivy fs --debug --scanners misconfig,vuln,secret --db-repository=registry.aquasec.com/trivy-db:2 --checks-bundle-repository=registry.aquasec.com/trivy-checks:1 --java-db-repository=registry.aquasec.com/trivy-java-db:1 --sast .
+        env:
+          AQUA_KEY: ${{ secrets.AQUA_KEY }}
+          AQUA_SECRET: ${{ secrets.AQUA_SECRET }}
+          TRIVY_USERNAME: ${{ secrets.TRIVY_USERNAME }}
+          TRIVY_PASSWORD: ${{ secrets.TRIVY_PASSWORD }}
+          GITHUB_TOKEN: ${{ github.token }}
+          AQUA_URL: https://api.eu-1.supply-chain.cloud.aquasec.com
+          CSPM_URL: https://eu-1.api.cloudsploit.com
+          TRIVY_RUN_AS_PLUGIN: "aqua"
+
+      - name: Manifest Generation
+        if: ${{ github.event_name != 'pull_request' }}
+        run: |
+          export BILLY_SERVER=https://billy.eu-1.codesec.aquasec.com
+          curl -sLo install.sh download.codesec.aquasec.com/billy/install.sh
+          curl -sLo install.sh.checksum https://github.com/argonsecurity/releases/releases/latest/download/install.sh.checksum
+          if ! cat install.sh.checksum | sha256sum --check; then
+          echo "install.sh checksum failed"
+          exit 1
+          fi
+          BINDIR="." sh install.sh
+          rm install.sh install.sh.checksum
+          ./billy generate \
+            --access-token "${{ secrets.GH_PAT_PASSWORD }}" \
+            --aqua-key "${{ secrets.AQUA_KEY }}" \
+            --aqua-secret "${{ secrets.AQUA_SECRET }}" \
+            --cspm-url "https://eu-1.api.cloudsploit.com" \
+            --artifact-path "$REPO_DOMAIN/$REPO/services/$ARTIFACT_ID@$IMAGE_DIGEST" \
+            --debug
+        env:
+          AQUA_URL: https://api.eu-1.supply-chain.cloud.aquasec.com
+          CSPM_URL: https://eu-1.api.cloudsploit.com
+          TRIVY_USERNAME: ${{ secrets.TRIVY_USERNAME }}
+          TRIVY_PASSWORD: ${{ secrets.TRIVY_PASSWORD }}
+          TRIVY_DB_REPOSITORY: "registry.aquasec.com/trivy-db:2"
+          TRIVY_JAVA_DB_REPOSITORY: "registry.aquasec.com/trivy-java-db:1"
+          TRIVY_CHECKS_BUNDLE_REPOSITORY: "registry.aquasec.com/trivy-checks:1"
+
