@@ -97,6 +97,7 @@ jobs:
           platforms: linux/amd64
           push: false
           outputs: type=registry
+          tags: vulnerable-app:ci
         
       # - uses: actions/setup-java@v4
       #   with:
