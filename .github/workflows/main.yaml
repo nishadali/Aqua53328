@@ -1,7 +1,7 @@
 name: 6-build-and-deploy-to-k8s-with-wait-and-labels.yml
 
 on:
-  workflow_call:
+  workflow_dispatch:
     inputs:
       kubernetes_resource_path:
         type: string
@@ -50,7 +50,7 @@ concurrency:
 
 jobs:
   aqua-scan:
-    if: ${{ github.event_name != 'pull_request' }}
+    # if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -76,8 +76,8 @@ jobs:
     env:
       commitmsg: ${{ github.event.head_commit.message }}
     runs-on: ubuntu-latest
-    if: |
-      !(github.event_name == 'pull_request' && startsWith(github.head_ref, 'dependabot/'))
+    # if: |
+    #   !(github.event_name == 'pull_request' && startsWith(github.head_ref, 'dependabot/'))
     permissions:
       contents: read
       packages: write
