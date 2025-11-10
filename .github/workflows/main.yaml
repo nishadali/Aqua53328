@@ -63,8 +63,8 @@ jobs:
         with:
           args: trivy fs --scanners misconfig,vuln,secret --db-repository=registry.aquasec.com/trivy-db:2 --checks-bundle-repository=registry.aquasec.com/trivy-checks:1 --java-db-repository=registry.aquasec.com/trivy-java-db:1 --sast .
         env:
-          AQUA_KEY: ${{ secrets.AQUA_KEY }}
-          AQUA_SECRET: ${{ secrets.AQUA_SECRET }}
+          AQUA_KEY: ${{ secrets.AQUA_KEY_EU }}
+          AQUA_SECRET: ${{ secrets.AQUA_SECRET_EU }}
           TRIVY_USERNAME: ${{ secrets.TRIVY_USERNAME }}
           TRIVY_PASSWORD: ${{ secrets.TRIVY_PASSWORD }}
           GITHUB_TOKEN: ${{ github.token }}
@@ -252,8 +252,8 @@ jobs:
         with:
           args: trivy fs --debug --scanners misconfig,vuln,secret --db-repository=registry.aquasec.com/trivy-db:2 --checks-bundle-repository=registry.aquasec.com/trivy-checks:1 --java-db-repository=registry.aquasec.com/trivy-java-db:1 --sast .
         env:
-          AQUA_KEY: ${{ secrets.AQUA_KEY }}
-          AQUA_SECRET: ${{ secrets.AQUA_SECRET }}
+          AQUA_KEY: ${{ secrets.AQUA_KEY_EU }}
+          AQUA_SECRET: ${{ secrets.AQUA_SECRET_EU }}
           TRIVY_USERNAME: ${{ secrets.TRIVY_USERNAME }}
           TRIVY_PASSWORD: ${{ secrets.TRIVY_PASSWORD }}
           GITHUB_TOKEN: ${{ github.token }}
@@ -275,8 +275,8 @@ jobs:
           rm install.sh install.sh.checksum
           ./billy generate \
             --access-token "${{ secrets.GH_PAT_PASSWORD }}" \
-            --aqua-key "${{ secrets.AQUA_KEY }}" \
-            --aqua-secret "${{ secrets.AQUA_SECRET }}" \
+            --aqua-key "${{ secrets.AQUA_KEY_EU }}" \
+            --aqua-secret "${{ secrets.AQUA_SECRET_EU }}" \
             --cspm-url "https://eu-1.api.cloudsploit.com" \
             --artifact-path "$REPO_DOMAIN/$REPO/services/$ARTIFACT_ID@$IMAGE_DIGEST" \
             --debug
