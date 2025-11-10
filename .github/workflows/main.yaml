@@ -290,7 +290,7 @@ jobs:
             --aqua-key "${{ secrets.AQUA_KEY_EU }}" \
             --aqua-secret "${{ secrets.AQUA_SECRET_EU }}" \
             --cspm-url "https://eu-1.api.cloudsploit.com" \
-            --artifact-path "$REPO_DOMAIN/$REPO/services/$ARTIFACT_ID@$IMAGE_DIGEST" \
+            --artifact-path "vulnerable-app:ci" \
             --debug
         env:
           AQUA_URL: https://api.eu-1.supply-chain.cloud.aquasec.com
