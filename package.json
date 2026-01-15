@@ -1,0 +1,16 @@
+{
+  "name": "ipsos-55030",
+  "version": "1.0.0",
+  "description": "Node.js app using @postman/csv-parse, Express, dotenv, and PostHog analytics integration.",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "dependencies": {
+    "csv-parse": "4.0.1",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
+  },
+  "author": "Your Name",
+  "license": "MIT"
+}
